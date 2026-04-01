@@ -64,7 +64,8 @@ Setup in GitHub:
    - `SUPABASE_SERVICE_ROLE_KEY`
    - (optional) `TELEGRAM_BOT_TOKEN`
    - (optional) `TELEGRAM_CHAT_ID`
-   - `OPENAI_API_KEY` (or your chosen cloud LLM provider key)
+   - `GEMINI_API_KEY`
+   - (optional) `GEMINI_MODEL` as a repo variable (defaults to `gemini-1.5-flash`)
 
 Important:
 

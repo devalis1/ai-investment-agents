@@ -37,6 +37,8 @@ export type EnvShape = Env & {
   LMSTUDIO_BASE_URL: string;
   LMSTUDIO_MODEL: string;
   ENABLE_CLOUD_FALLBACK: "true" | "false";
+  GEMINI_API_KEY?: string;
+  GEMINI_MODEL: string;
 
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
@@ -57,6 +59,8 @@ export const env: EnvShape = {
   LMSTUDIO_MODEL: process.env.LMSTUDIO_MODEL ?? "",
   ENABLE_CLOUD_FALLBACK:
     process.env.ENABLE_CLOUD_FALLBACK === "true" ? "true" : "false",
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+  GEMINI_MODEL: process.env.GEMINI_MODEL ?? "gemini-1.5-flash",
 
   SUPABASE_URL: process.env.SUPABASE_URL ?? "",
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",

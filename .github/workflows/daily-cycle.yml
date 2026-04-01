@@ -31,6 +31,7 @@ jobs:
       - name: Run analyze cycle
         env:
           TICKERS: ${{ vars.TICKERS }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           CYCLE_HARD_TIMEOUT_MS: "1800000"
 
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -40,7 +41,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
           # GitHub Actions cannot call local LLMs. Use a cloud provider key.
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ENABLE_CLOUD_FALLBACK: "true"
         run: npm run -s cycle:daily
 

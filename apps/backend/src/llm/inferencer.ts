@@ -2,6 +2,7 @@ import { env, assertLlmConfigForLocal, getLlmLocalProvider } from "../config/env
 import { AnalystResponseSchema, type AnalystResponse } from "./schema";
 import { OllamaClient } from "./providers/ollama";
 import { LmStudioClient } from "./providers/lmstudio";
+import { GeminiClient } from "./providers/gemini";
 
 export type AnalystInputs = {
   ticker: string;
@@ -99,6 +100,35 @@ function buildRepairPrompt(originalPrompt: string, previousOutput: string): stri
   ].join("\n");
 }
 
+async function inferGemini(prompt: string, opts?: { signal?: AbortSignal }): Promise<AnalystResponse> {
+  if (!env.GEMINI_API_KEY) {
+    throw new Error("Missing GEMINI_API_KEY (required for cloud fallback).");
+  }
+
+  const client = new GeminiClient(env.GEMINI_API_KEY, env.GEMINI_MODEL);
+
+  const raw1 = await client.generateJson(
+    ["Respond with ONLY valid JSON.", "", prompt].join("\n"),
+    { signal: opts?.signal }
+  );
+  debugLog(`gemini raw1 (${env.GEMINI_MODEL})`, raw1);
+  const validated1 = tryValidate(raw1);
+  if (validated1) return validated1;
+
+  const raw2 = await client.generateJson(
+    ["Respond with ONLY valid JSON.", "", buildRepairPrompt(prompt, raw1)].join("\n"),
+    { signal: opts?.signal }
+  );
+  debugLog(`gemini raw2 (${env.GEMINI_MODEL})`, raw2);
+  const validated2 = tryValidate(raw2);
+  if (!validated2) {
+    throw new Error(
+      `Gemini returned invalid JSON. Sample: ${JSON.stringify(raw2.slice(0, 200))}`
+    );
+  }
+  return validated2;
+}
+
 export async function inferAnalyst(
   inputs: AnalystInputs,
   opts?: { signal?: AbortSignal }
@@ -167,14 +197,13 @@ export async function inferAnalyst(
     // Fall through to optional cloud fallback
     // (keep error non-sensitive; do not include prompts/keys)
     if (env.ENABLE_CLOUD_FALLBACK === "true") {
-      // TODO: Implement cloud fallback using OpenAI/Gemini when an API key is available.
-      // - Add cloud provider config & client
-      // - Re-ask for structured JSON with a stricter prompt
-      // - Validate with `AnalystResponseSchema`
-      // - Log only metadata (ticker/model/latency), never secrets or full prompts
-      throw new Error(
-        "Local inference failed and cloud fallback is not implemented yet (TODO)."
-      );
+      // eslint-disable-next-line no-console
+      console.warn("Local inference failed; falling back to cloud model.", {
+        ticker: inputs.ticker,
+        provider: "gemini",
+        model: env.GEMINI_MODEL,
+      });
+      return await inferGemini(prompt, { signal: opts?.signal });
     }
 
     throw new Error(
