@@ -21,5 +21,12 @@ The goal is to start with scaffolding and minimal validations (everything compil
 
 ## Current status
 
-Initial scaffold created (documentation + Cursor rules). Next step: initialize the base project (Supabase backend and Next.js frontend) and define the data contract for `assets`/`ai_insights`.
+The project is now partially implemented:
+
+- Backend can run an end-to-end analysis cycle (fetch -> LLM -> Supabase -> Telegram).
+- Supabase schema is defined and in use (`assets`, `ai_insights`).
+- Frontend Next.js dashboard exists and can read `assets`/`ai_insights` from Supabase.
+- Automated repo audits exist (see `docs/status/latest-audit.md`).
+
+See `docs/status/current.md` for the authoritative “what works vs what’s pending” checklist and run commands.
 
