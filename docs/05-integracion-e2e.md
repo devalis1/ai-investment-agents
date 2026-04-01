@@ -48,6 +48,32 @@ Notes:
 - `CYCLE_HARD_TIMEOUT_MS` is a safety net so the job never hangs silently (default is 30 minutes).
 - Output is appended to a log file so you can inspect the last run.
 
+### GitHub Actions (daily, repo-native)
+
+If you prefer scheduling inside the repo (no server to maintain), use GitHub Actions.
+
+This repo includes a scheduled workflow at `.github/workflows/daily-cycle.yml` that runs daily at **06:15 UTC** and also supports manual runs.
+
+Setup in GitHub:
+
+1. Go to **Repo → Settings → Secrets and variables → Actions**
+2. Add **Variables**
+   - `TICKERS`: `AAPL,MSFT,NVDA` (comma-separated)
+3. Add **Secrets**
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - (optional) `TELEGRAM_BOT_TOKEN`
+   - (optional) `TELEGRAM_CHAT_ID`
+   - `OPENAI_API_KEY` (or your chosen cloud LLM provider key)
+
+Important:
+
+- GitHub Actions runners cannot reach local LLMs like Ollama/LM Studio. Use a cloud key for scheduled runs.
+
+Verify:
+
+- Go to **Actions → Daily analyze cycle → Run workflow** (manual) and confirm logs show inserts into `assets` and `ai_insights`.
+
 ## Tests
 
 - Smoke test: an example ticker generates a recommendation and appears in the UI.

@@ -19,6 +19,7 @@ Suggested tables:
    - Recommended simplest path (no new infra): cron runs the backend cycle script.
    - Command (from `apps/backend/`): `npm run cycle:daily`
    - It reads `TICKERS="AAPL,MSFT,NVDA"` from env and writes into `assets` + `ai_insights`.
+   - Repo-native alternative: GitHub Actions scheduled workflow (see `docs/05-integracion-e2e.md`).
 5. Verify inserts/updates work without errors and avoid unnecessary rate-limit pressure.
 
 Local scaffolding:
