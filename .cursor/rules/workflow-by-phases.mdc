@@ -1,0 +1,12 @@
+---
+description: Work by phases, keep notes in docs/
+globs: docs/*.md
+alwaysApply: false
+---
+
+# Workflow by phases
+
+- When you change implementation details, update the corresponding phase doc in `docs/`.
+- Each phase doc should include: objective, changes, dependencies, risks/mitigation, and how to test.
+- Keep commands snippets short and copy/paste friendly.
+

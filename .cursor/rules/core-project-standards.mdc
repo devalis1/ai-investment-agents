@@ -1,0 +1,15 @@
+---
+description: Core project standards for AI investment agents
+alwaysApply: true
+---
+
+# Core standards
+
+- No secrets in prompts/code; use `.env.local` and keep examples without real keys.
+- When calling LLMs: require structured JSON output and validate it before using.
+- Prefer safe defaults: handle upstream failures (rate limits, timeouts) with retries/backoff.
+- If you defer implementation, leave a `// TODO:` comment describing what to do next.
+- Keep TypeScript strict; avoid `any` and implicit `any`.
+- For database changes: design for least-privilege and apply Supabase RLS.
+- Always include a small test plan for the change (unit for pure logic; integration for boundaries).
+

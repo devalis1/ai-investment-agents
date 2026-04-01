@@ -1,0 +1,38 @@
+name: Nightly repo audit
+
+on:
+  schedule:
+    # Runs daily at 02:15 UTC
+    - cron: "15 2 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Run audit
+        run: npm run -s audit
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: latest-audit
+          path: docs/status/latest-audit.md
+          if-no-files-found: error
+

@@ -1,0 +1,13 @@
+{
+  "name": "ai-investment-agents",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "audit": "node --import tsx scripts/meta-agent/audit.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}
+

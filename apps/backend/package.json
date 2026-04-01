@@ -1,0 +1,31 @@
+{
+  "name": "ai-investment-agents-backend",
+  "version": "0.1.0",
+  "description": "Backend para AI Investment Agents (Supabase/Edge + LLM local/cloud).",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx src/demo/local-inference.ts",
+    "dev:fetcher": "tsx src/demo/fetcher-demo.ts",
+    "dev:analyze": "tsx src/demo/analyze-demo.ts",
+    "dev:cycle": "tsx src/demo/cycle-demo.ts",
+    "cycle:daily": "tsx src/jobs/cycle.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.100.0",
+    "dotenv": "^17.3.1",
+    "node-telegram-bot-api": "^0.67.0",
+    "yahoo-finance2": "^3.13.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/node-telegram-bot-api": "^0.64.14",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}

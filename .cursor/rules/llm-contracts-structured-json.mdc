@@ -1,0 +1,11 @@
+---
+description: Enforce LLM structured JSON contracts
+alwaysApply: true
+---
+
+# LLM contracts
+
+- When the backend asks the “Analista Financiero”, request output as valid JSON with an explicit schema.
+- Reject/repair invalid JSON: add a retry with a stricter prompt, and log only non-sensitive metadata.
+- Never store secrets in the database or pass them through the LLM.
+
