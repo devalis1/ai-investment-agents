@@ -23,7 +23,7 @@ The goal is to start with scaffolding and minimal validations (everything compil
 
 The project is now partially implemented:
 
-- Backend can run an end-to-end analysis cycle (fetch -> LLM -> Supabase -> Telegram) via CLI or GitHub Actions—there is **no** first-party HTTP server in-repo for that cycle today.
+- Backend can run an end-to-end analysis cycle (fetch → LLM → Supabase → Telegram) via CLI, GitHub Actions, or a small **HTTP worker** (`npm run cycle:trigger-server` in `apps/backend`) secured with `CYCLE_TRIGGER_SECRET` for the dashboard trigger.
 - Supabase schema is defined and in use (`assets`, `ai_insights`).
 - Frontend Next.js dashboard reads `assets`/`ai_insights`, supports light/dark theme, server-side ticker search, a local watchlist, and optional `POST /api/trigger-cycle` when `CYCLE_TRIGGER_URL` / `CYCLE_TRIGGER_SECRET` are configured on the server.
 - Automated repo audits exist (see `docs/status/latest-audit.md`).

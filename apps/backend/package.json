@@ -9,6 +9,7 @@
     "dev:analyze": "tsx src/demo/analyze-demo.ts",
     "dev:cycle": "tsx src/demo/cycle-demo.ts",
     "cycle:daily": "tsx src/jobs/cycle.ts",
+    "cycle:trigger-server": "tsx src/server/cycle-trigger-server.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "keywords": [],
