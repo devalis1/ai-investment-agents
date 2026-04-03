@@ -20,6 +20,7 @@ Location: `apps/backend`
 
 - Fetcher:
   - Yahoo Finance quote + RSI computed from daily closes
+  - Per-ticker **headlines** (3–5 lines) from Yahoo `search` news, with safe logs (`[headlines]`: latency, attempts, `providerId`, counts — no secrets)
   - Code: `apps/backend/src/fetcher/*`
 - LLM:
   - Local-first: Ollama or LM Studio
@@ -108,7 +109,5 @@ npm run audit
 
 ## Recommended next steps (minimal)
 
-1. Decide how tickers are managed long-term:
-   - keep env `TICKERS` + local watchlist (simplest), or
-   - add a `tickers` table and sync from the UI.
+1. Optional: UI or authenticated policies for editing `public.tickers` (AED-14).
 2. Add a minimal headlines provider (even 3–5 headlines per ticker) and pass into the LLM.

@@ -33,7 +33,7 @@ From `apps/backend/`:
 npm run cycle:daily
 ```
 
-This reads `TICKERS` from environment and defaults to `AAPL,MSFT,NVDA` if missing.
+This resolves symbols from `public.tickers` when at least one enabled row exists (see `docs/sql/phase-3-public-tickers.sql`). Otherwise it reads `TICKERS` from the environment and defaults to `AAPL,MSFT,NVDA` if unset.
 
 ### Cron (daily)
 

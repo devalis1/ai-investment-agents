@@ -45,4 +45,6 @@ create policy "ai_insights_select_public"
 -- Writes are intended for server-side code (service role bypasses RLS).
 -- We still keep write policies restrictive by default.
 -- If you introduce authenticated users, add INSERT/UPDATE policies for `authenticated`.
+--
+-- Next: `docs/sql/phase-3-public-tickers.sql` for `public.tickers` (canonical cycle list + RLS).
 

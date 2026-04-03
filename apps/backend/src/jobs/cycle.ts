@@ -1,5 +1,6 @@
 import { runFetcher } from "../fetcher/run";
 import { createServiceClient } from "../supabase/serviceClient";
+import { resolveCycleTickers } from "../tickers/resolveCycleTickers";
 import { inferAnalyst } from "../llm/inferencer";
 import { type AnalystResponse } from "../llm/schema";
 import { sendTelegramNotification } from "../telegram/send";
@@ -30,13 +31,6 @@ async function withTimeout<T>(
   } finally {
     if (timer) clearTimeout(timer);
   }
-}
-
-function parseTickers(raw: string): string[] {
-  return raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
 }
 
 async function maybeNotifyTelegram(params: {
@@ -83,7 +77,7 @@ export async function analyzeCycle(options: AnalyzeCycleOptions): Promise<void> 
   const fetchResults = await runFetcher(fetchInputs);
 
   for (const item of fetchResults) {
-    const { ticker, market, price_current, rsi, fetched_at } = item;
+    const { ticker, market, price_current, rsi, headlines, fetched_at } = item;
 
     try {
       // eslint-disable-next-line no-console
@@ -114,9 +108,13 @@ export async function analyzeCycle(options: AnalyzeCycleOptions): Promise<void> 
       }
 
       // eslint-disable-next-line no-console
-      console.log("Calling inferAnalyst:", { ticker, rsi, price_current });
+      console.log("Calling inferAnalyst:", {
+        ticker,
+        rsi,
+        price_current,
+        headlineCount: headlines.length,
+      });
 
-      // TODO: Fetch real headlines/news per ticker and pass them into `inferAnalyst`.
       const llmAbort = new AbortController();
       const llmTimeout = setTimeout(() => llmAbort.abort(), tickerTimeoutMs);
       let llmResult: AnalystResponse;
@@ -126,7 +124,7 @@ export async function analyzeCycle(options: AnalyzeCycleOptions): Promise<void> 
             ticker,
             price_current,
             rsi,
-            headlines: [],
+            headlines,
           },
           { signal: llmAbort.signal }
         );
@@ -201,9 +199,13 @@ export async function analyzeCycle(options: AnalyzeCycleOptions): Promise<void> 
 
 // CLI entrypoint
 async function main(): Promise<void> {
-  // Defaults to a small set; override with `TICKERS` env var.
-  const rawTickers = process.env.TICKERS ?? "AAPL,MSFT,NVDA";
-  const tickers = parseTickers(rawTickers);
+  const supabase = createServiceClient();
+  const { tickers, source } = await resolveCycleTickers(
+    supabase,
+    process.env.TICKERS
+  );
+  // eslint-disable-next-line no-console
+  console.log("Cycle tickers resolved:", { source, tickers });
 
   const hardTimeoutMs = Number(process.env.CYCLE_HARD_TIMEOUT_MS ?? 1_800_000);
   const hardTimer = setTimeout(() => {
