@@ -31,6 +31,8 @@ function required(name: string): string {
 export type LlmLocalProvider = "ollama" | "lmstudio";
 
 export type EnvShape = Env & {
+  /** Comma-separated symbols for `cycle:daily` when `public.tickers` has no enabled rows (or the DB query fails). */
+  TICKERS?: string;
   LLM_LOCAL_PROVIDER: LlmLocalProvider;
   OLLAMA_BASE_URL: string;
   OLLAMA_MODEL: string;
