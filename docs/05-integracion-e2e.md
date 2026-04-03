@@ -14,7 +14,8 @@ Goal: validate the full flow:
 ## Current status
 
 - The end-to-end cycle runs locally via `apps/backend` using service role writes to Supabase and Telegram notifications.
-- Next step is scheduling the cycle (cron) and building the frontend dashboard in `apps/frontend`.
+- A scheduled GitHub Actions workflow can run the cycle daily (`daily-cycle.yml`).
+- The frontend dashboard in `apps/frontend` can list results from Supabase, search tickers, maintain a local watchlist, and call `POST /api/trigger-cycle` when a separate HTTP worker URL + secret are configured—otherwise analysis still runs via backend CLI or Actions.
 
 ## Daily Run (scheduling)
 

@@ -1,6 +1,6 @@
 # Current project status (single source of truth)
 
-Updated: 2026-04-01
+Updated: 2026-04-03
 
 ## What works today
 
@@ -31,16 +31,19 @@ Location: `apps/backend`
   - Inserts `ai_insights`
   - Sends Telegram notifications if configured
   - Entry: `apps/backend/src/jobs/cycle.ts`
+- **No in-repo HTTP server** for the cycle; CLI + scheduled jobs only.
 
-### Frontend (read-only dashboard)
+### Frontend (dashboard)
 
 Location: `apps/frontend`
 
 - Next.js App Router dashboard:
-  - Reads `assets` + `ai_insights` from Supabase
-  - Client-side join via `asset_id`
-  - Loading/error/empty states
-  - Ticker input persisted in `localStorage` (UI-only)
+  - Reads `assets` + `ai_insights` from Supabase (client join via `asset_id`)
+  - Light/dark theme (`next-themes`), calm token-based styling
+  - Ticker search via `GET /api/ticker-search` (Yahoo Finance search JSON, server-side; avoids CORS and keeps keys off the client)
+  - Structured **watchlist** in `localStorage` (`ai-investment-agents:watchlist`) plus legacy comma field `ai-investment-agents:ticker-input`
+  - **Analyze selected / watchlist** calls `POST /api/trigger-cycle`; without `CYCLE_TRIGGER_URL` + `CYCLE_TRIGGER_SECRET` the API returns **501** and the UI explains next steps
+  - Loading skeletons, recommendation badges, expandable reasoning, watchlist filter on insights
 - Entry:
   - `apps/frontend/app/page.tsx`
   - `apps/frontend/components/dashboard/DashboardClient.tsx`
@@ -89,19 +92,18 @@ npm run audit
 ### Product/feature gaps
 
 - Headlines/news provider for richer reasoning (currently `headlines: []`).
-- A “source of truth” for tickers in the DB (right now: env `TICKERS` + UI-localStorage).
-- A frontend action to add/update tickers (and/or trigger a cycle run).
+- A “source of truth” for tickers in the **database** (right now: env `TICKERS` + UI localStorage watchlist).
+- **HTTP worker** that runs `analyzeCycle` so `CYCLE_TRIGGER_URL` can execute analysis from Vercel without shipping service keys to the browser.
 - PWA features (manifest/service worker/offline).
 
 ### Documentation drift to fix
 
-- Root `README.md` and `apps/frontend/README.md` should reflect that backend cycle + frontend dashboard exist.
+- Root `README.md` and `apps/frontend/README.md` should stay aligned with this file after changes.
 
 ## Recommended next steps (minimal)
 
-1. Update `README.md` and `apps/frontend/README.md` to match the current status.
-2. Decide how tickers are managed:
-   - keep `TICKERS` env-only (simplest single-user), or
-   - add a `tickers` table and manage it from the UI.
+1. Add a small **authenticated** backend HTTP service (or serverless function) that calls `analyzeCycle` with service role env, and point `CYCLE_TRIGGER_URL` at it.
+2. Decide how tickers are managed long-term:
+   - keep env `TICKERS` + local watchlist (simplest), or
+   - add a `tickers` table and sync from the UI.
 3. Add a minimal headlines provider (even 3–5 headlines per ticker) and pass into the LLM.
-
