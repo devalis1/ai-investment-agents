@@ -1,6 +1,6 @@
 # Current project status (single source of truth)
 
-Updated: 2026-04-03
+Updated: 2026-04-05
 
 ## What works today
 
@@ -28,6 +28,8 @@ Location: `apps/backend`
   - Deterministic settings to reduce drift
   - Qwen “thinking” models are handled with `think: false` in Ollama requests
   - Optional cloud fallback: Gemini (used by GitHub Actions)
+  - Safe **`[inferAnalyst]`** logs: `latencyMs`, `providerId`, `headlineCount`, `schemaRepairAttempts` (no prompts or secrets)
+  - **`LLM_DEBUG`:** use `true` only when troubleshooting; leave unset or `false` for normal runs (`docs/01-setup-cuentas-y-env.md`, `.env.example`).
 - Cycle job (end-to-end):
   - Resolves ticker list from `public.tickers` when enabled rows exist, else from `TICKERS` env
   - Upserts `assets`
@@ -46,6 +48,7 @@ Location: `apps/frontend`
   - Ticker search via `GET /api/ticker-search` (Yahoo Finance search JSON, server-side; avoids CORS and keeps keys off the client)
   - Structured **watchlist** in `localStorage` (`ai-investment-agents:watchlist`) plus legacy comma field `ai-investment-agents:ticker-input`
   - **Analyze selected / watchlist** calls `POST /api/trigger-cycle`; set Vercel **server** env `CYCLE_TRIGGER_URL` (worker base URL, e.g. `https://host/` or `https://host/trigger`) and `CYCLE_TRIGGER_SECRET` (shared with the worker). Optional `CYCLE_TRIGGER_PROXY_TIMEOUT_MS` (default 240000). Route `maxDuration` is 240s. Without URL/secret the API returns **501**.
+  - **Cycle symbols (DB):** read `public.tickers` with the anon/publishable key; **mutations** go through `POST` / `PATCH` / `DELETE` `/api/tickers` with `Authorization: Bearer <TICKERS_ADMIN_SECRET>` (server env). The UI stores that token in `sessionStorage` after you paste it once per tab. Requires `SUPABASE_SERVICE_ROLE_KEY` on the Next server for those routes.
   - Loading skeletons, recommendation badges, expandable reasoning, watchlist filter on insights
 - Entry:
   - `apps/frontend/app/page.tsx`
@@ -87,6 +90,8 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+**Env:** keep **one** `ai-investment-agents/.env.local` at the repo root (`NEXT_PUBLIC_*`, `TICKERS_ADMIN_SECRET`, `SUPABASE_*`, etc.). Use **`cd apps/frontend && npm run dev`** (not raw `npx next dev`): `scripts/run-with-root-env.mjs` merges root `.env` / `.env.local` into the process **before** Next starts so `NEXT_PUBLIC_*` inlining works. Optional `apps/frontend/.env.local` only if you need overrides. Restart dev after edits.
+
 ### Repo audit
 
 ```bash
@@ -99,8 +104,6 @@ npm run audit
 
 ### Product/feature gaps
 
-- Headlines/news provider for richer reasoning (currently `headlines: []`).
-- UI sync to `public.tickers` (local watchlist remains client-only until AED-14).
 - PWA features (manifest/service worker/offline).
 
 ### Documentation drift to fix
@@ -109,5 +112,5 @@ npm run audit
 
 ## Recommended next steps (minimal)
 
-1. Optional: UI or authenticated policies for editing `public.tickers` (AED-14).
-2. Add a minimal headlines provider (even 3–5 headlines per ticker) and pass into the LLM.
+1. ~~UI for `public.tickers`~~ **Done:** dashboard “Cycle symbols (Supabase)” + `/api/tickers`.
+2. ~~Headlines in the LLM path~~ **Done (v1):** see `fetcher/headlines.ts` + `inferAnalyst` inputs.

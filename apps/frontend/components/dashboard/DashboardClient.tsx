@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import {
   type WatchlistEntry,
@@ -13,6 +13,12 @@ import {
 } from '@/lib/watchlist';
 import { DashboardLoadingSkeleton } from '@/components/dashboard/DashboardLoadingSkeleton';
 import { RecommendationBadge } from '@/components/dashboard/RecommendationBadge';
+import { MAX_DB_CYCLE_TICKERS } from '@/lib/ticker-symbols';
+import {
+  clearTickersAdminToken,
+  getTickersAdminToken,
+  setTickersAdminToken,
+} from '@/lib/tickers-admin-token';
 
 type AssetRow = {
   id: string;
@@ -32,12 +38,23 @@ type InsightRow = {
 
 type SearchHit = { symbol: string; name?: string; exchange?: string };
 
+type CycleTickerRow = {
+  ticker: string;
+  enabled: boolean;
+  created_at: string;
+};
+
 const REASON_PREVIEW_LEN = 220;
 const SEARCH_DEBOUNCE_MS = 320;
 
-function useDebouncedValue<T>(value: T, ms: number): T {
+/** Debounced string for search; clears immediately when empty so stale queries do not refetch after reset. */
+function useDebouncedSearchQuery(value: string, ms: number): string {
   const [d, setD] = useState(value);
   useEffect(() => {
+    if (value.trim() === '') {
+      setD('');
+      return;
+    }
     const t = setTimeout(() => setD(value), ms);
     return () => clearTimeout(t);
   }, [value, ms]);
@@ -48,7 +65,12 @@ function formatDateTime(value: string | null | undefined): string {
   if (!value) return '—';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
+  // Fixed locale + UTC so SSR (Node) and the browser produce the same string (avoids hydration mismatches).
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'UTC',
+  }).format(d);
 }
 
 function ReasoningBlock({
@@ -86,10 +108,12 @@ export function DashboardClient() {
   const [hydrated, setHydrated] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const debouncedSearch = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
+  const debouncedSearch = useDebouncedSearchQuery(searchQuery, SEARCH_DEBOUNCE_MS);
   const [searchResults, setSearchResults] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
+  const tickerSearchContainerRef = useRef<HTMLDivElement | null>(null);
 
   const [pendingEntries, setPendingEntries] = useState<WatchlistEntry[]>([]);
 
@@ -104,6 +128,13 @@ export function DashboardClient() {
   const [cycleBusy, setCycleBusy] = useState(false);
   const [cycleMessage, setCycleMessage] = useState<string | null>(null);
   const [cycleTone, setCycleTone] = useState<'success' | 'error' | 'info'>('info');
+
+  const [cycleTickers, setCycleTickers] = useState<CycleTickerRow[]>([]);
+  const [cycleTickersLoading, setCycleTickersLoading] = useState(true);
+  const [cycleTickersError, setCycleTickersError] = useState<string | null>(null);
+  const [adminTokenDraft, setAdminTokenDraft] = useState('');
+  const [hasAdminToken, setHasAdminToken] = useState(false);
+  const [cycleListBusy, setCycleListBusy] = useState(false);
 
   const watchSet = useMemo(
     () => new Set(watchlist.map((w) => w.symbol)),
@@ -150,6 +181,31 @@ export function DashboardClient() {
     });
   }, [loadDashboard]);
 
+  const loadCycleTickers = useCallback(async () => {
+    setCycleTickersLoading(true);
+    setCycleTickersError(null);
+    const { data, error: qErr } = await supabase
+      .from('tickers')
+      .select('ticker,enabled,created_at')
+      .order('ticker', { ascending: true });
+    if (qErr) {
+      setCycleTickers([]);
+      setCycleTickersError(qErr.message);
+      setCycleTickersLoading(false);
+      return;
+    }
+    setCycleTickers((data ?? []) as CycleTickerRow[]);
+    setCycleTickersLoading(false);
+  }, []);
+
+  useEffect(() => {
+    setHasAdminToken(!!getTickersAdminToken());
+    loadCycleTickers().catch(() => {
+      setCycleTickersError('Failed to load cycle tickers.');
+      setCycleTickersLoading(false);
+    });
+  }, [loadCycleTickers]);
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem(WATCHLIST_STORAGE_KEY);
@@ -190,12 +246,16 @@ export function DashboardClient() {
       return;
     }
 
-    let cancelled = false;
+    const ac = new AbortController();
     setSearchLoading(true);
     setSearchError(null);
 
-    fetch(`/api/ticker-search?q=${encodeURIComponent(q)}`)
-      .then(async (res) => {
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/ticker-search?q=${encodeURIComponent(q)}`,
+          { signal: ac.signal },
+        );
         const data = (await res.json()) as {
           results?: SearchHit[];
           message?: string;
@@ -203,25 +263,36 @@ export function DashboardClient() {
         if (!res.ok) {
           throw new Error(data.message ?? `Search failed (${res.status})`);
         }
-        return data.results ?? [];
-      })
-      .then((results) => {
-        if (cancelled) return;
-        setSearchResults(results);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
+        setSearchResults(data.results ?? []);
+        setSearchError(null);
+      } catch (e: unknown) {
+        if (e instanceof DOMException && e.name === 'AbortError') return;
+        if (e instanceof Error && e.name === 'AbortError') return;
         setSearchResults([]);
         setSearchError(e instanceof Error ? e.message : 'Search failed');
-      })
-      .finally(() => {
-        if (!cancelled) setSearchLoading(false);
-      });
+      } finally {
+        if (!ac.signal.aborted) {
+          setSearchLoading(false);
+        }
+      }
+    })();
 
     return () => {
-      cancelled = true;
+      ac.abort();
     };
   }, [debouncedSearch]);
+
+  useEffect(() => {
+    if (!searchDropdownOpen) return;
+    function onDocPointerDown(e: PointerEvent): void {
+      const el = tickerSearchContainerRef.current;
+      const target = e.target;
+      if (!el || !(target instanceof Node) || el.contains(target)) return;
+      setSearchDropdownOpen(false);
+    }
+    document.addEventListener('pointerdown', onDocPointerDown);
+    return () => document.removeEventListener('pointerdown', onDocPointerDown);
+  }, [searchDropdownOpen]);
 
   const latestInsightByAssetId = useMemo(() => {
     const map = new Map<string, InsightRow>();
@@ -266,6 +337,11 @@ export function DashboardClient() {
       if (prev.some((e) => e.symbol === s)) return prev;
       return [...prev, entry];
     });
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchError(null);
+    setSearchLoading(false);
+    setSearchDropdownOpen(false);
   }
 
   function removePendingSymbol(symbol: string): void {
@@ -284,6 +360,126 @@ export function DashboardClient() {
 
   function clearWatchlist(): void {
     setWatchlist([]);
+  }
+
+  async function tickersApi(
+    method: 'POST' | 'PATCH' | 'DELETE',
+    opts: { body?: Record<string, unknown>; tickerQuery?: string },
+  ): Promise<{ ok: boolean; message: string }> {
+    const token = getTickersAdminToken();
+    if (!token) {
+      return {
+        ok: false,
+        message:
+          'Save the admin token below (same value as server TICKERS_ADMIN_SECRET).',
+      };
+    }
+    let url = '/api/tickers';
+    if (method === 'DELETE' && opts.tickerQuery) {
+      url += `?ticker=${encodeURIComponent(opts.tickerQuery)}`;
+    }
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+    };
+    if (opts.body) headers['Content-Type'] = 'application/json';
+    const res = await fetch(url, {
+      method,
+      headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    const data = (await res.json()) as { message?: string };
+    if (!res.ok) {
+      return {
+        ok: false,
+        message: data.message ?? `Request failed (${res.status})`,
+      };
+    }
+    return { ok: true, message: 'OK' };
+  }
+
+  function saveAdminToken(): void {
+    const t = adminTokenDraft.trim();
+    if (!t) return;
+    setTickersAdminToken(t);
+    setHasAdminToken(true);
+    setAdminTokenDraft('');
+    setCycleTone('success');
+    setCycleMessage('Admin token saved for this browser session.');
+  }
+
+  function forgetAdminToken(): void {
+    clearTickersAdminToken();
+    setHasAdminToken(false);
+    setCycleTone('info');
+    setCycleMessage('Admin token removed from this browser session.');
+  }
+
+  async function addPendingToCycleDb(): Promise<void> {
+    if (pendingEntries.length === 0) return;
+    setCycleListBusy(true);
+    setCycleMessage(null);
+    const r = await tickersApi('POST', {
+      body: { tickers: pendingEntries.map((e) => e.symbol) },
+    });
+    if (!r.ok) {
+      setCycleTone('error');
+      setCycleMessage(r.message);
+      setCycleListBusy(false);
+      return;
+    }
+    await loadCycleTickers();
+    setPendingEntries([]);
+    setCycleTone('success');
+    setCycleMessage('Symbols added to Supabase cycle list.');
+    setCycleListBusy(false);
+  }
+
+  async function syncWatchlistToCycleDb(): Promise<void> {
+    if (watchlist.length === 0) return;
+    setCycleListBusy(true);
+    setCycleMessage(null);
+    const r = await tickersApi('POST', {
+      body: { tickers: watchlist.map((e) => e.symbol) },
+    });
+    if (!r.ok) {
+      setCycleTone('error');
+      setCycleMessage(r.message);
+      setCycleListBusy(false);
+      return;
+    }
+    await loadCycleTickers();
+    setCycleTone('success');
+    setCycleMessage('Watchlist merged into Supabase cycle list.');
+    setCycleListBusy(false);
+  }
+
+  async function setCycleTickerEnabled(
+    ticker: string,
+    enabled: boolean,
+  ): Promise<void> {
+    setCycleListBusy(true);
+    const r = await tickersApi('PATCH', { body: { ticker, enabled } });
+    if (!r.ok) {
+      setCycleTone('error');
+      setCycleMessage(r.message);
+      setCycleListBusy(false);
+      return;
+    }
+    await loadCycleTickers();
+    setCycleListBusy(false);
+  }
+
+  async function removeCycleTickerRow(ticker: string): Promise<void> {
+    setCycleListBusy(true);
+    const r = await tickersApi('DELETE', { tickerQuery: ticker });
+    if (!r.ok) {
+      setCycleTone('error');
+      setCycleMessage(r.message);
+      setCycleListBusy(false);
+      return;
+    }
+    await loadCycleTickers();
+    setCycleListBusy(false);
   }
 
   async function runCycleFor(symbols: string[]): Promise<void> {
@@ -329,6 +525,7 @@ export function DashboardClient() {
       setCycleTone('success');
       setCycleMessage('Analysis job accepted. Refreshing dashboard data…');
       await loadDashboard();
+      await loadCycleTickers();
       setCycleMessage('Dashboard updated from Supabase.');
     } catch (e: unknown) {
       setCycleTone('error');
@@ -385,8 +582,8 @@ export function DashboardClient() {
           Dashboard
         </h1>
         <p className="text-sm text-muted-foreground">
-          Public read-only dashboard powered by Supabase. Search tickers, manage a
-          local watchlist, and request analysis when a server trigger is
+          Supabase-backed dashboard: search tickers, a local watchlist, editable
+          cycle symbols in the database, and on-demand analysis when a trigger is
           configured.
         </p>
       </header>
@@ -411,14 +608,18 @@ export function DashboardClient() {
             </p>
           </div>
 
-          <div className="relative z-10">
+          <div ref={tickerSearchContainerRef} className="relative z-10">
             <label htmlFor="ticker-search" className="sr-only">
               Search tickers
             </label>
             <input
               id="ticker-search"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setSearchDropdownOpen(true);
+              }}
+              onFocus={() => setSearchDropdownOpen(true)}
               placeholder="e.g. Apple or NVDA"
               className="w-full min-h-11 rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
               inputMode="search"
@@ -433,7 +634,7 @@ export function DashboardClient() {
                 {searchError}
               </p>
             ) : null}
-            {searchResults.length > 0 ? (
+            {searchDropdownOpen && searchResults.length > 0 ? (
               <ul
                 className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-border bg-card py-1 shadow-lg"
                 role="listbox"
@@ -458,7 +659,10 @@ export function DashboardClient() {
                   </li>
                 ))}
               </ul>
-            ) : debouncedSearch.trim().length > 0 && !searchLoading && !searchError ? (
+            ) : searchDropdownOpen &&
+              debouncedSearch.trim().length > 0 &&
+              !searchLoading &&
+              !searchError ? (
               <p className="mt-2 text-xs text-muted-foreground">No matches.</p>
             ) : null}
           </div>
@@ -507,6 +711,14 @@ export function DashboardClient() {
                   className="min-h-11 rounded-lg px-4 text-sm text-muted-foreground hover:text-foreground"
                 >
                   Clear selection
+                </button>
+                <button
+                  type="button"
+                  disabled={cycleListBusy || pendingEntries.length === 0}
+                  onClick={() => addPendingToCycleDb()}
+                  className="min-h-11 rounded-lg border border-border bg-background px-4 text-sm font-medium hover:bg-muted disabled:opacity-50"
+                >
+                  Add selection to cycle list (DB)
                 </button>
                 <button
                   type="button"
@@ -591,15 +803,135 @@ export function DashboardClient() {
               </ul>
             )}
 
-            <button
-              type="button"
-              disabled={cycleBusy || watchlist.length === 0}
-              onClick={() => runCycleFor(watchlist.map((w) => w.symbol))}
-              className="mt-4 min-h-11 w-full rounded-lg bg-accent px-4 text-sm font-semibold text-accent-foreground shadow hover:opacity-90 disabled:opacity-50 sm:w-auto"
-            >
-              Analyze saved watchlist
-            </button>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <button
+                type="button"
+                disabled={cycleListBusy || watchlist.length === 0}
+                onClick={() => syncWatchlistToCycleDb()}
+                className="min-h-11 w-full rounded-lg border border-border bg-background px-4 text-sm font-medium hover:bg-muted disabled:opacity-50 sm:w-auto"
+              >
+                Sync watchlist → cycle list (DB)
+              </button>
+              <button
+                type="button"
+                disabled={cycleBusy || watchlist.length === 0}
+                onClick={() => runCycleFor(watchlist.map((w) => w.symbol))}
+                className="min-h-11 w-full rounded-lg bg-accent px-4 text-sm font-semibold text-accent-foreground shadow hover:opacity-90 disabled:opacity-50 sm:w-auto"
+              >
+                Analyze saved watchlist
+              </button>
+            </div>
           </div>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-sm font-medium text-card-foreground">
+              Cycle symbols (Supabase)
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Scheduled / CLI jobs use this list when at least one row is enabled
+              (see backend <code className="rounded bg-muted px-1">resolveCycleTickers</code>
+              ). Otherwise they fall back to the <code className="rounded bg-muted px-1">TICKERS</code>{' '}
+              env var. Max {MAX_DB_CYCLE_TICKERS} symbols.
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+            <p className="font-medium text-card-foreground">DB edits</p>
+            <p className="mt-1">
+              Paste the same secret you set as{' '}
+              <code className="rounded bg-muted px-1">TICKERS_ADMIN_SECRET</code> on the
+              Next.js server. Stored in{' '}
+              <code className="rounded bg-muted px-1">sessionStorage</code> for this tab
+              only.
+            </p>
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input
+                type="password"
+                value={adminTokenDraft}
+                onChange={(e) => setAdminTokenDraft(e.target.value)}
+                placeholder={hasAdminToken ? 'Replace token…' : 'Admin token'}
+                autoComplete="off"
+                className="min-h-11 w-full flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => saveAdminToken()}
+                  className="min-h-11 rounded-lg bg-accent px-4 text-sm font-medium text-accent-foreground hover:opacity-90"
+                >
+                  Save token
+                </button>
+                <button
+                  type="button"
+                  onClick={() => forgetAdminToken()}
+                  className="min-h-11 rounded-lg border border-border bg-background px-4 text-sm hover:bg-muted"
+                >
+                  Forget token
+                </button>
+              </div>
+            </div>
+            {hasAdminToken ? (
+              <p className="mt-2 text-emerald-700 dark:text-emerald-400">
+                Token is set for this session.
+              </p>
+            ) : null}
+          </div>
+
+          {cycleTickersError ? (
+            <p className="text-sm text-rose-600 dark:text-rose-400">
+              Could not load <code className="rounded bg-muted px-1">tickers</code>:{' '}
+              {cycleTickersError}
+            </p>
+          ) : null}
+
+          {cycleTickersLoading ? (
+            <p className="text-sm text-muted-foreground">Loading cycle list…</p>
+          ) : cycleTickers.length === 0 && !cycleTickersError ? (
+            <p className="text-sm text-muted-foreground">
+              No rows in <code className="rounded bg-muted px-1">public.tickers</code>.
+              Add symbols from search or sync the watchlist — the scheduler will use{' '}
+              <code className="rounded bg-muted px-1">TICKERS</code> env until you do.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border rounded-lg border border-border">
+              {cycleTickers.map((row) => (
+                <li
+                  key={row.ticker}
+                  className="flex min-h-12 flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="font-medium text-card-foreground">
+                      {row.ticker}
+                    </span>
+                    <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={row.enabled}
+                        disabled={cycleListBusy}
+                        onChange={(e) =>
+                          setCycleTickerEnabled(row.ticker, e.target.checked)
+                        }
+                        className="h-4 w-4 rounded border-border"
+                      />
+                      Enabled for scheduled cycle
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={cycleListBusy}
+                    onClick={() => removeCycleTickerRow(row.ticker)}
+                    className="min-h-11 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                  >
+                    Remove from DB
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </section>
 

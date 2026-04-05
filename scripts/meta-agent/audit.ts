@@ -190,12 +190,11 @@ function buildPrompts(context: {
       "- Do NOT add secrets or read `.env.local`.",
       "",
       "Repo context:",
-      "- `analyzeCycle()` currently passes `headlines: []` into `inferAnalyst` (TODO in `apps/backend/src/jobs/cycle.ts`).",
-      "- `inferAnalyst` validates JSON and supports repair, with optional cloud fallback marked TODO.",
+      "- `runFetcher` attaches Yahoo `search` headlines (`fetcher/headlines.ts`); `analyzeCycle` passes them into `inferAnalyst`.",
+      "- `inferAnalyst` validates JSON and supports repair; optional Gemini fallback when `ENABLE_CLOUD_FALLBACK=true`.",
       "",
       "Deliverables:",
-      "- Add a minimal ‘headlines/news’ provider (even if it’s stubbed or uses existing Yahoo endpoints) so reasoning is not always empty-context.",
-      "- Add structured, non-sensitive logging per ticker: latency, provider (ollama/lmstudio), retry count, and whether Telegram was attempted.",
+      "- Extend structured, non-sensitive logging per ticker: Telegram attempted/skipped, invalid tickers, and LLM timeouts (headlines + `[inferAnalyst]` logs already exist).",
       "- Update `docs/05-integracion-e2e.md` to reflect what is now automated vs manual.",
       "- Include a smoke-test plan (one ticker, invalid ticker, LLM timeout).",
     ].join("\n"),
@@ -387,6 +386,8 @@ function main(): void {
   const mentionedNotInExample = Array.from(docsVarMentions).filter(
     (v) =>
       !envExampleVars.has(v) &&
+      v.includes("_") &&
+      !v.endsWith("_") &&
       (v.includes("SUPABASE") ||
         v.includes("TELEGRAM") ||
         v.includes("LLM") ||
@@ -472,8 +473,12 @@ function main(): void {
       "Local-first LLM inference (Ollama or LM Studio) with JSON validation + repair (`apps/backend/src/llm/inferencer.ts`)."
     );
     capabilities.push("Telegram notifications supported when `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` set (optional).");
-    capabilities.push("Cloud fallback is gated by `ENABLE_CLOUD_FALLBACK=true` but not implemented yet (TODO).");
-    capabilities.push("Headlines/news input to LLM is currently empty (`headlines: []`) in the cycle (TODO).");
+    capabilities.push(
+      "Optional cloud LLM fallback: Gemini when `ENABLE_CLOUD_FALLBACK=true` (`apps/backend/src/llm/inferencer.ts`)."
+    );
+    capabilities.push(
+      "Headlines for LLM: 3–5 lines per ticker from Yahoo `search` news, with `[headlines]` + `[inferAnalyst]` safe logs (`apps/backend/src/fetcher/headlines.ts`)."
+    );
   } else {
     capabilities.push("Backend package not detected under `apps/backend/`.");
   }
@@ -486,10 +491,9 @@ function main(): void {
 
   const nextSteps: string[] = [
     "Align the public Supabase env var contract across docs, `.env.example`, and `apps/frontend` (choose canonical key name and support alias if needed).",
-    "Implement minimal headlines/news sourcing so `inferAnalyst` reasoning uses real context (keep recommendation deterministic per RSI policy).",
-    "Add a minimal frontend dashboard page: list `assets` and show latest `ai_insights` per asset with loading/error states.",
+    "Add a minimal frontend dashboard page: list `assets` and show latest `ai_insights` per asset with loading/error states (if not already complete vs `docs/status/current.md`).",
     "Decide on one scheduling approach for production (local cron is already documented; consider Vercel Cron only if/when a deployable API endpoint exists).",
-    "Optionally implement cloud fallback behind `ENABLE_CLOUD_FALLBACK=true` with structured JSON validation and non-sensitive logs.",
+    "Optional: persist headline snapshots in `ai_insights.key_headlines` when product wants DB-level news history (v1 keeps analyst JSON schema-only).",
   ];
 
   const prompts = buildPrompts({ repoRoot, drift, hasFrontend, hasBackend });

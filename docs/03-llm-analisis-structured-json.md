@@ -9,8 +9,10 @@ The backend will send something like:
 - `ticker`
 - `price_current`
 - `rsi`
-- `headlines` (summarized key news)
+- `headlines` — **3–5** short lines from Yahoo Finance search news (`apps/backend/src/fetcher/headlines.ts`), title plus publisher when available. Empty when the provider fails (cycle still runs; reasoning uses price + RSI only).
 - portfolio context (shares/avg_price if applicable)
+
+**Analyst JSON output** remains only `recommendation` + `reasoning` (no schema change for headlines in v1).
 
 ## Output contract (outputs)
 
