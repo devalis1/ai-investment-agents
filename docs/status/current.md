@@ -6,62 +6,41 @@ Updated: 2026-04-05
 
 ### Supabase (DB)
 
-- Schema files (apply in order): `docs/sql/phase-2-assets-ai-insights.sql`, then `docs/sql/phase-3-public-tickers.sql`
-- Tables:
-  - `public.assets`
-  - `public.ai_insights`
-  - `public.tickers` — canonical cycle symbols when at least one `enabled` row exists; otherwise the backend uses `TICKERS` env (see `docs/02-bd-esquema-y-fetcher.md`)
-- RLS enabled with public `SELECT` policies on these tables (single-user prototype).
-- Server-side writes use the service role key.
+- Schema files:
+  - `docs/sql/phase-2-assets-ai-insights.sql` — `public.assets`, `public.ai_insights`, baseline RLS
+  - `docs/sql/phase-3-public-tickers.sql` — `public.tickers` (+ RLS public `SELECT`)
+- Server-side writes use the **service role** key (backend job, GitHub Actions, Next.js server routes that are documented as server-only).
 
-### Backend (data -> AI -> DB -> Telegram)
+### Backend (data → AI → DB → Telegram)
 
 Location: `apps/backend`
 
-- Fetcher:
-  - Yahoo Finance quote + RSI computed from daily closes
-  - Per-ticker **headlines** (3–5 lines) from Yahoo `search` news, with safe logs (`[headlines]`: latency, attempts, `providerId`, counts — no secrets)
-  - Code: `apps/backend/src/fetcher/*`
-- LLM:
-  - Local-first: Ollama or LM Studio
-  - Structured JSON validation + repair retries
-  - Deterministic settings to reduce drift
-  - Qwen “thinking” models are handled with `think: false` in Ollama requests
-  - Optional cloud fallback: Gemini (used by GitHub Actions)
-  - Safe **`[inferAnalyst]`** logs: `latencyMs`, `providerId`, `headlineCount`, `schemaRepairAttempts` (no prompts or secrets)
-  - **`LLM_DEBUG`:** use `true` only when troubleshooting; leave unset or `false` for normal runs (`docs/01-setup-cuentas-y-env.md`, `.env.example`).
-- Cycle job (end-to-end):
-  - Resolves ticker list from `public.tickers` when enabled rows exist, else from `TICKERS` env
-  - Upserts `assets`
-  - Inserts `ai_insights`
-  - Sends Telegram notifications if configured
-  - Entry: `apps/backend/src/jobs/cycle.ts` (resolution: `apps/backend/src/tickers/resolveCycleTickers.ts`)
-- **HTTP cycle worker** (`apps/backend/src/server/cycle-trigger-server.ts`): POST `{ "tickers": string[] }` with `Authorization: Bearer <CYCLE_TRIGGER_SECRET>` (same secret as Vercel `CYCLE_TRIGGER_SECRET`), runs `analyzeCycle`. Start: `cd apps/backend && npm run cycle:trigger-server` (default port `8787`). Health: `GET /health`.
+- **Fetcher**
+  - Yahoo Finance quote + RSI from daily closes (`yahoo-finance2`).
+  - **Headlines (v1):** 3–5 lines per ticker via Yahoo `search` (`fetcher/headlines.ts`); on failure, `headlines: []` and the cycle continues.
+  - **Residential / IPv6 resilience:** Undici-based fetch with **IPv4-only DNS** by default (`YAHOO_FETCH_IPV4_ONLY`, see `.env.example`); bounded timeouts (`YAHOO_FETCH_TIMEOUT_MS`); optional `YAHOO_FINANCE_QUERY_HOST`; optional **`FETCH_MARKET_DATA_MODE=dev_stub`** / **`FETCH_MARKET_DATA_FALLBACK=dev_stub`** with `data/dev-market-stub.json` (see `apps/backend/data/dev-market-stub.example.json`).
+  - `runFetcher` returns `{ results, failures }`; quote vs chart errors are labeled; **CLI exits non-zero** if every ticker fails fetch (`cycle.ts`). HTTP trigger returns **502** when all market fetches fail.
+- **LLM**
+  - Local-first: Ollama or LM Studio; structured JSON + repair retries.
+  - Optional **Gemini** fallback (`ENABLE_CLOUD_FALLBACK`); default model id kept current in `.env.example`; **`maxOutputTokens`** sized for JSON + reasoning; **`.env.local` overrides shell** (`dotenv` `override: true` in `config/env.ts`).
+- **Cycle**
+  - **`npm run cycle:daily`** → `src/jobs/cycle.ts`: upsert `assets`, insert `ai_insights`, optional Telegram.
+  - Tickers: **`resolveCycleTickers`** — `public.tickers` when any row has `enabled = true`, else **`TICKERS`** env (comma-separated).
+- **HTTP worker (on-demand)**
+  - `npm run cycle:trigger-server` — `apps/backend/src/server/cycle-trigger-server.ts`; `POST` with `Authorization: Bearer <CYCLE_TRIGGER_SECRET>` and `{ "tickers": string[] }`. Frontend **`CYCLE_TRIGGER_URL`** + **`CYCLE_TRIGGER_SECRET`** proxy to this host.
 
 ### Frontend (dashboard)
 
 Location: `apps/frontend`
 
-- Next.js App Router dashboard:
-  - Reads `assets` + `ai_insights` from Supabase (client join via `asset_id`)
-  - Light/dark theme (`next-themes`), calm token-based styling
-  - Ticker search via `GET /api/ticker-search` (Yahoo Finance search JSON, server-side; avoids CORS and keeps keys off the client)
-  - Structured **watchlist** in `localStorage` (`ai-investment-agents:watchlist`) plus legacy comma field `ai-investment-agents:ticker-input`
-  - **Analyze selected / watchlist** calls `POST /api/trigger-cycle`; set Vercel **server** env `CYCLE_TRIGGER_URL` (worker base URL, e.g. `https://host/` or `https://host/trigger`) and `CYCLE_TRIGGER_SECRET` (shared with the worker). Optional `CYCLE_TRIGGER_PROXY_TIMEOUT_MS` (default 240000). Route `maxDuration` is 240s. Without URL/secret the API returns **501**.
-  - **Cycle symbols (DB):** read `public.tickers` with the anon/publishable key; **mutations** go through `POST` / `PATCH` / `DELETE` `/api/tickers` with `Authorization: Bearer <TICKERS_ADMIN_SECRET>` (server env). The UI stores that token in `sessionStorage` after you paste it once per tab. Requires `SUPABASE_SERVICE_ROLE_KEY` on the Next server for those routes.
-  - Loading skeletons, recommendation badges, expandable reasoning, watchlist filter on insights
-- Entry:
-  - `apps/frontend/app/page.tsx`
-  - `apps/frontend/components/dashboard/DashboardClient.tsx`
+- Next.js App Router: `assets` + `ai_insights` (client read from Supabase); theme (`next-themes`); watchlist in **localStorage**; ticker search via **`/api/ticker-search`** (server-side).
+- **Run analysis:** `POST /api/trigger-cycle` forwards to the backend worker when `CYCLE_TRIGGER_URL` + `CYCLE_TRIGGER_SECRET` are set; otherwise **501** with guidance.
+- **Canonical tickers in DB:** `GET`/`POST`/`PATCH`/`DELETE` **`/api/tickers`** (server-side Supabase + **`TICKERS_ADMIN_SECRET`** gate for mutating methods). Local dev: prefer `npm run dev` from `apps/frontend` using **`scripts/run-with-root-env.mjs`** so root `.env.local` loads (see root `.env.example`).
 
 ### Automation
 
-- Meta-audit script:
-  - Run: `npm run audit` (repo root)
-  - Writes: `docs/status/latest-audit.md`
-- GitHub scheduled workflows:
-  - `nightly-audit.yml`: runs the audit and uploads `latest-audit.md`
-  - `daily-cycle.yml`: runs the daily cycle in GitHub Actions using Gemini cloud (Actions can’t call local Ollama)
+- Meta-audit: `npm run audit` (repo root) → `docs/status/latest-audit.md`
+- Workflows: `nightly-audit.yml`, `daily-cycle.yml` (GitHub Actions; cloud LLM / secrets as configured)
 
 ## How to run (local)
 
@@ -70,15 +49,10 @@ Location: `apps/frontend`
 ```bash
 cd apps/backend
 npm install
-
-# Runs a local end-to-end cycle (uses public.tickers when populated; else TICKERS env)
-TICKERS=AAPL,MSFT,NVDA npm run dev:cycle
-
-# HTTP worker for the frontend trigger (needs CYCLE_TRIGGER_SECRET + Supabase + LLM in .env.local)
-CYCLE_TRIGGER_SECRET=dev-shared-secret npm run cycle:trigger-server
+npm run cycle:daily
+# or
+TICKERS=AAPL,MSFT npm run dev:cycle
 ```
-
-**Timeouts / hosting:** Each ticker may take up to ~240s for LLM + DB (`cycle.ts`). The Next.js proxy aborts after `CYCLE_TRIGGER_PROXY_TIMEOUT_MS` (default 240s) per request — one long ticker can hit that ceiling; use fewer tickers per request or host the worker on an always-on VM with no platform wall clock below your needs. On **Vercel**, Fluid route handlers are capped by plan (`maxDuration` on `trigger-cycle` is set to 240s); **Pro** supports long-running functions better than **Hobby**. For heavy batches, run the worker on Fly.io, Railway, Render, a small VPS, or Cloud Run with a high request timeout — never expose service-role keys to the browser.
 
 ### Frontend
 
@@ -90,7 +64,12 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-**Env:** keep **one** `ai-investment-agents/.env.local` at the repo root (`NEXT_PUBLIC_*`, `TICKERS_ADMIN_SECRET`, `SUPABASE_*`, etc.). Use **`cd apps/frontend && npm run dev`** (not raw `npx next dev`): `scripts/run-with-root-env.mjs` merges root `.env` / `.env.local` into the process **before** Next starts so `NEXT_PUBLIC_*` inlining works. Optional `apps/frontend/.env.local` only if you need overrides. Restart dev after edits.
+### HTTP cycle worker (optional)
+
+```bash
+cd apps/backend
+CYCLE_TRIGGER_SECRET=your_secret npm run cycle:trigger-server
+```
 
 ### Repo audit
 
@@ -102,15 +81,16 @@ npm run audit
 
 ## What is still pending
 
-### Product/feature gaps
+- **PWA baseline (Epic 4):** web app manifest + icons (**AED-24**), then service worker + offline shell (**AED-25**), then docs (**AED-26**). See `docs/04-frontend-pwa-nextjs.md`.
+- **Multi-user / auth:** current RLS is prototype-oriented (broad read where documented); tighten when you add real users.
+- **Observability:** structured logging / metrics for production (beyond console + GitHub logs).
 
-- PWA features (manifest/service worker/offline).
+## Documentation drift to fix (ongoing)
 
-### Documentation drift to fix
-
-- Root `README.md` and `apps/frontend/README.md` should stay aligned with this file after changes.
+- Keep root `README.md` and `apps/frontend/README.md` aligned with this file after merges.
+- Re-run `npm run audit` after sizable changes to refresh `latest-audit.md`.
 
 ## Recommended next steps (minimal)
 
-1. ~~UI for `public.tickers`~~ **Done:** dashboard “Cycle symbols (Supabase)” + `/api/tickers`.
-2. ~~Headlines in the LLM path~~ **Done (v1):** see `fetcher/headlines.ts` + `inferAnalyst` inputs.
+1. **Ship PWA v1:** **AED-24** (manifest + icons), then **AED-25** / **AED-26** as scoped.
+2. Optional: deploy **cycle-trigger-server** to a small always-on host or PaaS and set Vercel env for `CYCLE_TRIGGER_*`.

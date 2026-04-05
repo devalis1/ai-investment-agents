@@ -202,33 +202,34 @@ function buildPrompts(context: {
 
   if (context.hasFrontend) {
     prompts.push({
-      title: "Frontend dashboard skeleton (assets + ai_insights read)",
+      title: "PWA baseline: Web App Manifest + icons (Linear AED-24)",
       scope: [
         "apps/frontend/**",
         "docs/04-frontend-pwa-nextjs.md",
-        "docs/05-integracion-e2e.md",
+        "docs/status/current.md",
         "scripts/meta-agent/**",
       ],
       prompt: [
-        "Goal: implement the Phase 4 minimum UI: list `assets` and latest `ai_insights` from Supabase with good loading/error states.",
+        "Goal: ship **AED-24** — valid Web App Manifest + icon set so the dashboard is installable as a PWA (no service worker in this task; that is AED-25).",
         "",
         "Scope boundaries:",
         "- You may edit ONLY these paths:",
-        "- `apps/frontend/**`",
+        "- `apps/frontend/**` (prefer `app/manifest.ts` or `public/manifest.webmanifest` + assets under `public/`)",
         "- `docs/04-frontend-pwa-nextjs.md`",
-        "- `docs/05-integracion-e2e.md`",
-        "- `scripts/meta-agent/**`",
-        "- Do NOT change DB schema.",
+        "- `docs/status/current.md`",
+        "- `scripts/meta-agent/**` if audit drift text needs a one-line tweak",
+        "- Do NOT register a service worker here.",
+        "- Do NOT break existing App Router API routes (`/api/trigger-cycle`, `/api/ticker-search`, `/api/tickers`).",
         "- Do NOT add secrets or read `.env.local`.",
         "",
         "Repo context:",
-        "- Supabase schema is defined in `docs/sql/phase-2-assets-ai-insights.sql`.",
-        "- RLS currently allows public SELECT on `assets` and `ai_insights` (prototype).",
+        "- Next.js App Router; dashboard is client-heavy (`DashboardClient.tsx`). See `docs/status/current.md` for capabilities.",
+        "- Epic parent: **AED-9** (PWA baseline); follow-up: AED-25 (SW), AED-26 (docs).",
         "",
         "Deliverables:",
-        "- A simple page that shows assets and their newest insight (recommendation/reasoning/current_price).",
-        "- Loading + error + empty states.",
-        "- A short ‘How to run’ section in `docs/04-frontend-pwa-nextjs.md` that matches reality.",
+        "- Installable PWA check passes in Chrome devtools (manifest valid, icons resolve).",
+        "- Document local verification steps and known limitations in `docs/04-frontend-pwa-nextjs.md`; mark **AED-24** Done in Linear when merged.",
+        "- Short test plan: `npm run build` + manual install prompt smoke test.",
       ].join("\n"),
     });
   }
@@ -484,15 +485,17 @@ function main(): void {
   }
   if (hasFrontend) {
     capabilities.push("Frontend Next.js app exists under `apps/frontend/` (Next 16 / React 19).");
-    capabilities.push("Frontend has a Supabase client helper under `apps/frontend/lib/supabase/client.ts` but dashboard pages are not implemented yet.");
+    capabilities.push(
+      "Supabase client (`apps/frontend/lib/supabase/client.ts`) + dashboard (`DashboardClient.tsx`): assets/insights, watchlist, ticker search, cycle trigger proxy, `/api/tickers` for DB canonical tickers (see `docs/status/current.md`)."
+    );
   } else {
     capabilities.push("Frontend package not detected under `apps/frontend/`.");
   }
 
   const nextSteps: string[] = [
-    "Align the public Supabase env var contract across docs, `.env.example`, and `apps/frontend` (choose canonical key name and support alias if needed).",
-    "Add a minimal frontend dashboard page: list `assets` and show latest `ai_insights` per asset with loading/error states (if not already complete vs `docs/status/current.md`).",
-    "Decide on one scheduling approach for production (local cron is already documented; consider Vercel Cron only if/when a deployable API endpoint exists).",
+    "PWA baseline: manifest + icons per `docs/04-frontend-pwa-nextjs.md` (Linear **AED-24**), then service worker/offline shell (**AED-25**) and status/doc refresh (**AED-26**).",
+    "Align the public Supabase env var contract across docs, `.env.example`, and `apps/frontend` (canonical publishable key name + optional alias).",
+    "Production scheduling: document worker deploy for `cycle:trigger-server` or keep GitHub Actions `daily-cycle.yml`; optional Vercel Cron only if routing fits.",
     "Optional: persist headline snapshots in `ai_insights.key_headlines` when product wants DB-level news history (v1 keeps analyst JSON schema-only).",
   ];
 

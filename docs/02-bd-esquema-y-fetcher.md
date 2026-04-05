@@ -44,7 +44,8 @@ The HTTP trigger worker (`cycle-trigger-server`) still runs only the tickers sup
 Local scaffolding:
 - Code lives in `apps/backend/src/fetcher/` (`runFetcher` + Yahoo Finance adapter).
 - **Headlines (v1):** `fetchHeadlinesForTicker` in `headlines.ts` pulls **3–5** headline-style lines per ticker via `yahoo-finance2` **`search`** (news bundle). Results are attached on each `runFetcher` row as `headlines: string[]`. If Yahoo news fails after retries, `headlines` is empty and the cycle continues.
-- RSI is still computed locally from daily closes (unchanged math); the next step is to write results into Supabase.
+- **Yahoo on flaky networks:** defaults use **Undici + IPv4-only DNS** and per-request timeouts (see `.env.example`: `YAHOO_FETCH_IPV4_ONLY`, `YAHOO_FETCH_TIMEOUT_MS`, optional `YAHOO_FINANCE_QUERY_HOST`, `FETCH_MARKET_DATA_*` stub modes). `runFetcher` returns `{ results, failures }`.
+- RSI is still computed locally from daily closes (unchanged math); the cycle persists rows via `apps/backend/src/jobs/cycle.ts`.
 
 ## Tests
 

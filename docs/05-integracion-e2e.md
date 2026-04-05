@@ -15,7 +15,7 @@ Goal: validate the full flow:
 
 - The end-to-end cycle runs locally via `apps/backend` using service role writes to Supabase and Telegram notifications.
 - A scheduled GitHub Actions workflow can run the cycle daily (`daily-cycle.yml`).
-- The frontend dashboard in `apps/frontend` can list results from Supabase, search tickers, maintain a local watchlist, and call `POST /api/trigger-cycle` when a separate HTTP worker URL + secret are configured—otherwise analysis still runs via backend CLI or Actions.
+- The frontend dashboard in `apps/frontend` can list results from Supabase, search tickers, maintain a local watchlist, sync **canonical tickers** via `/api/tickers` (server + `TICKERS_ADMIN_SECRET`), and call `POST /api/trigger-cycle` when a separate HTTP worker URL + secret are configured—otherwise analysis still runs via backend CLI or Actions. The worker returns **502** if every requested ticker fails market data fetch (see `docs/status/current.md`).
 
 ## Daily Run (scheduling)
 
