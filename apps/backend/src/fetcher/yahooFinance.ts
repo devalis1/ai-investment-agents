@@ -1,7 +1,13 @@
-import YahooFinance from "yahoo-finance2";
 import type { Market } from "./types";
+import { summarizeUndiciFetchError } from "./errorSummary";
+import { sharedYahooFinance as yf } from "./sharedYahooFinance";
 
-const yf = new YahooFinance();
+const YAHOO_MAX_ATTEMPTS = 4;
+const YAHOO_RETRY_DELAYS_MS = [800, 2_000, 4_500] as const;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function inferMarketFromTicker(ticker: string): Market {
   // Argentina tickers often end with `.BA` in Yahoo Finance conventions.
@@ -75,6 +81,21 @@ function computeRsiFromCloses(closes: number[], period = 14): number | null {
   return Number.isFinite(rsi) ? rsi : null;
 }
 
+async function withYahooStep<T>(
+  ticker: string,
+  step: "quote" | "chart",
+  fn: () => Promise<T>
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    const detail = summarizeUndiciFetchError(err);
+    throw new Error(`Yahoo Finance "${step}" failed for ${ticker}: ${detail}`, {
+      cause: err,
+    });
+  }
+}
+
 function extractClosesFromChart(chart: unknown): number[] | null {
   // yahoo-finance2 chart returns `{ meta, quotes, events }` for daily ranges.
   const maybe = chart as {
@@ -102,12 +123,14 @@ function extractClosesFromChart(chart: unknown): number[] | null {
   return closes.length > 0 ? closes : null;
 }
 
-export async function fetchYahooPriceAndRsi(
+async function fetchYahooPriceAndRsiOnce(
   ticker: string
 ): Promise<{ market: Market; price_current: number; rsi: number }> {
   const market = inferMarketFromTicker(ticker);
 
-  const quote = (await yf.quote(ticker)) as Record<string, unknown>;
+  const quote = (await withYahooStep(ticker, "quote", () =>
+    yf.quote(ticker)
+  )) as Record<string, unknown>;
   const price = extractPrice(quote);
   if (price === null) {
     throw new Error(`Unable to extract price for ticker: ${ticker}`);
@@ -115,11 +138,13 @@ export async function fetchYahooPriceAndRsi(
 
   const now = Math.floor(Date.now() / 1000);
   const period1 = now - 60 * 60 * 24 * 90; // last ~90 days
-  const chart = await yf.chart(ticker, {
-    period1,
-    period2: now,
-    interval: "1d",
-  });
+  const chart = await withYahooStep(ticker, "chart", () =>
+    yf.chart(ticker, {
+      period1,
+      period2: now,
+      interval: "1d",
+    })
+  );
 
   const closes = extractClosesFromChart(chart);
   if (!closes) {
@@ -132,5 +157,26 @@ export async function fetchYahooPriceAndRsi(
   }
 
   return { market, price_current: price, rsi };
+}
+
+/**
+ * Yahoo / upstream `fetch` often returns transient ETIMEDOUT (especially on residential networks).
+ * Match headlines retry behavior so a single blip does not abort the whole cycle.
+ */
+export async function fetchYahooPriceAndRsi(
+  ticker: string
+): Promise<{ market: Market; price_current: number; rsi: number }> {
+  let lastErr: unknown;
+  for (let i = 0; i < YAHOO_MAX_ATTEMPTS; i++) {
+    try {
+      return await fetchYahooPriceAndRsiOnce(ticker);
+    } catch (err) {
+      lastErr = err;
+      if (i < YAHOO_RETRY_DELAYS_MS.length) {
+        await sleep(YAHOO_RETRY_DELAYS_MS[i]!);
+      }
+    }
+  }
+  throw lastErr;
 }
 

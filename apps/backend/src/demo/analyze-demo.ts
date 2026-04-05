@@ -7,11 +7,13 @@ async function main(): Promise<void> {
 
   const tickers = ["AAPL", "MSFT", "NVDA"];
 
-  const fetchResults = await runFetcher(tickers.map((ticker) => ({ ticker })));
+  const { results: fetchResults } = await runFetcher(
+    tickers.map((ticker) => ({ ticker }))
+  );
 
   for (const item of fetchResults) {
     // Use the fetcher output to keep prices/RSI consistent across the system.
-    const { ticker, market, price_current, rsi, fetched_at } = item;
+    const { ticker, market, price_current, rsi, headlines, fetched_at } = item;
 
     // 1) Upsert asset row
     const { data: asset, error: assetErr } = await supabase
@@ -38,13 +40,11 @@ async function main(): Promise<void> {
       continue;
     }
 
-    // 2) Prepare LLM inputs (headlines will be added in Phase 3/5).
-    // TODO: Fetch real headlines/news per ticker and pass them into `inferAnalyst`.
     const llmResult = await inferAnalyst({
       ticker,
       price_current,
       rsi,
-      headlines: [],
+      headlines,
     });
 
     // 3) Insert AI insight

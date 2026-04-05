@@ -1,4 +1,6 @@
 import { runFetcher } from "../fetcher/run";
+import { logYahooNetworkHints } from "../fetcher/fetchDiagnostics";
+import type { FetcherRunReport } from "../fetcher/types";
 import { createServiceClient } from "../supabase/serviceClient";
 import { resolveCycleTickers } from "../tickers/resolveCycleTickers";
 import { inferAnalyst } from "../llm/inferencer";
@@ -63,7 +65,9 @@ async function maybeNotifyTelegram(params: {
   }
 }
 
-export async function analyzeCycle(options: AnalyzeCycleOptions): Promise<void> {
+export async function analyzeCycle(
+  options: AnalyzeCycleOptions
+): Promise<FetcherRunReport> {
   const supabase = createServiceClient();
 
   const fetchInputs = options.tickers.map((ticker) => ({ ticker }));
@@ -74,9 +78,9 @@ export async function analyzeCycle(options: AnalyzeCycleOptions): Promise<void> 
   // eslint-disable-next-line no-console
   console.log("Starting analyze cycle:", { tickers: options.tickers });
 
-  const fetchResults = await runFetcher(fetchInputs);
+  const fetchReport = await runFetcher(fetchInputs);
 
-  for (const item of fetchResults) {
+  for (const item of fetchReport.results) {
     const { ticker, market, price_current, rsi, headlines, fetched_at } = item;
 
     try {
@@ -195,6 +199,8 @@ export async function analyzeCycle(options: AnalyzeCycleOptions): Promise<void> 
       continue;
     }
   }
+
+  return fetchReport;
 }
 
 // CLI entrypoint
@@ -219,7 +225,15 @@ async function main(): Promise<void> {
   hardTimer.unref();
 
   try {
-    await analyzeCycle({ tickers });
+    const fetchReport = await analyzeCycle({ tickers });
+    if (fetchReport.results.length === 0 && tickers.length > 0) {
+      // eslint-disable-next-line no-console
+      console.error("[cycle] Every ticker failed market data fetch.", {
+        failures: fetchReport.failures,
+      });
+      logYahooNetworkHints();
+      process.exit(1);
+    }
   } finally {
     clearTimeout(hardTimer);
   }

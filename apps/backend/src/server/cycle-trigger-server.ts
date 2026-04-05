@@ -100,12 +100,26 @@ export function createCycleTriggerServer(expectedSecret: string): http.Server {
 
       const startedAt = new Date().toISOString();
       try {
-        await analyzeCycle({ tickers });
+        const fetchReport = await analyzeCycle({ tickers });
+        const finishedAt = new Date().toISOString();
+        if (fetchReport.results.length === 0 && tickers.length > 0) {
+          sendJson(res, 502, {
+            ok: false,
+            error: "all_market_fetch_failed",
+            message:
+              "Every ticker failed Yahoo/stub market fetch. See failures[].detail (quote vs chart vs network).",
+            tickers,
+            failures: fetchReport.failures,
+            startedAt,
+            finishedAt,
+          });
+          return;
+        }
         sendJson(res, 200, {
           ok: true,
           tickers,
           startedAt,
-          finishedAt: new Date().toISOString(),
+          finishedAt,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

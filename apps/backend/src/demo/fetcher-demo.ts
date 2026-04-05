@@ -1,7 +1,7 @@
 import { runFetcher } from "../fetcher/run";
 
 async function main(): Promise<void> {
-  const results = await runFetcher([
+  const report = await runFetcher([
     { ticker: "AAPL" },
     { ticker: "MSFT" },
     // Example Argentina ticker:
@@ -9,7 +9,7 @@ async function main(): Promise<void> {
   ]);
 
   // eslint-disable-next-line no-console
-  console.log(JSON.stringify(results, null, 2));
+  console.log(JSON.stringify(report, null, 2));
 }
 
 main().catch((err) => {
