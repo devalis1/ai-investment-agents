@@ -1,4 +1,4 @@
-> Generated: 2026-03-31T10:53:35.492Z
+> Generated: 2026-04-05T10:22:46.825Z
 
 ## Current state
 
@@ -11,7 +11,9 @@
 - docs/05-integracion-e2e.md
 - docs/06-costes-y-migracion-local.md
 - docs/sql/phase-2-assets-ai-insights.sql
+- docs/sql/phase-3-public-tickers.sql
 - docs/status/README.md
+- docs/status/current.md
 
 **Key implementation files enumerated**
 
@@ -24,13 +26,16 @@
 - docs/05-integracion-e2e.md
 - docs/06-costes-y-migracion-local.md
 - docs/sql/phase-2-assets-ai-insights.sql
+- docs/sql/phase-3-public-tickers.sql
 - docs/status/README.md
+- docs/status/current.md
 - .cursor/rules/core-project-standards.mdc
 - .cursor/rules/db-security-rls.mdc
 - .cursor/rules/llm-contracts-structured-json.mdc
 - .cursor/rules/workflow-by-phases.mdc
 - apps/backend/src/jobs/cycle.ts
 - apps/backend/src/llm/inferencer.ts
+- apps/backend/src/fetcher/headlines.ts
 - apps/backend/src/fetcher/run.ts
 - apps/backend/src/fetcher/types.ts
 - apps/backend/src/fetcher/yahooFinance.ts
@@ -44,29 +49,21 @@
 - Supabase service-role writes: upsert `assets` + insert `ai_insights` (`apps/backend/src/supabase/serviceClient.ts`).
 - Local-first LLM inference (Ollama or LM Studio) with JSON validation + repair (`apps/backend/src/llm/inferencer.ts`).
 - Telegram notifications supported when `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` set (optional).
-- Cloud fallback is gated by `ENABLE_CLOUD_FALLBACK=true` but not implemented yet (TODO).
-- Headlines/news input to LLM is currently empty (`headlines: []`) in the cycle (TODO).
+- Optional cloud LLM fallback: Gemini when `ENABLE_CLOUD_FALLBACK=true` (`apps/backend/src/llm/inferencer.ts`).
+- Headlines for LLM: 3–5 lines per ticker from Yahoo `search` news, with `[headlines]` + `[inferAnalyst]` safe logs (`apps/backend/src/fetcher/headlines.ts`).
 - Frontend Next.js app exists under `apps/frontend/` (Next 16 / React 19).
 - Frontend has a Supabase client helper under `apps/frontend/lib/supabase/client.ts` but dashboard pages are not implemented yet.
 
 ## Drift / inconsistencies
 
-- **MEDIUM**: Docs mention env vars not present in `.env.example`
-  - Examples missing: LLM, LLM_DEBUG, NEXT_PUBLIC_SUPABASE_ANON_KEY
-- **LOW**: `.env.example` contains env vars not mentioned in docs
-  - Docs may need update: LLM_LOCAL_PROVIDER
-- **HIGH**: Frontend expects `NEXT_PUBLIC_SUPABASE_ANON_KEY` but `.env.example` does not define it
-  - See `apps/frontend/lib/supabase/client.ts`. Docs suggest `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY` as canonical and `NEXT_PUBLIC_SUPABASE_ANON_KEY` as an optional alias (commented). Align the frontend env contract.
-- **MEDIUM**: README current status appears outdated
-  - README states only 'initial scaffold', but backend has runnable cycle scripts (`apps/backend/package.json` includes `cycle:daily`) and frontend exists under `apps/frontend/`.
+- None detected by heuristic checks.
 
 ## Recommended next steps
 
 - Align the public Supabase env var contract across docs, `.env.example`, and `apps/frontend` (choose canonical key name and support alias if needed).
-- Implement minimal headlines/news sourcing so `inferAnalyst` reasoning uses real context (keep recommendation deterministic per RSI policy).
-- Add a minimal frontend dashboard page: list `assets` and show latest `ai_insights` per asset with loading/error states.
+- Add a minimal frontend dashboard page: list `assets` and show latest `ai_insights` per asset with loading/error states (if not already complete vs `docs/status/current.md`).
 - Decide on one scheduling approach for production (local cron is already documented; consider Vercel Cron only if/when a deployable API endpoint exists).
-- Optionally implement cloud fallback behind `ENABLE_CLOUD_FALLBACK=true` with structured JSON validation and non-sensitive logs.
+- Optional: persist headline snapshots in `ai_insights.key_headlines` when product wants DB-level news history (v1 keeps analyst JSON schema-only).
 
 ## Parallel agent prompts
 
@@ -131,12 +128,11 @@ Scope boundaries:
 - Do NOT add secrets or read `.env.local`.
 
 Repo context:
-- `analyzeCycle()` currently passes `headlines: []` into `inferAnalyst` (TODO in `apps/backend/src/jobs/cycle.ts`).
-- `inferAnalyst` validates JSON and supports repair, with optional cloud fallback marked TODO.
+- `runFetcher` attaches Yahoo `search` headlines (`fetcher/headlines.ts`); `analyzeCycle` passes them into `inferAnalyst`.
+- `inferAnalyst` validates JSON and supports repair; optional Gemini fallback when `ENABLE_CLOUD_FALLBACK=true`.
 
 Deliverables:
-- Add a minimal ‘headlines/news’ provider (even if it’s stubbed or uses existing Yahoo endpoints) so reasoning is not always empty-context.
-- Add structured, non-sensitive logging per ticker: latency, provider (ollama/lmstudio), retry count, and whether Telegram was attempted.
+- Extend structured, non-sensitive logging per ticker: Telegram attempted/skipped, invalid tickers, and LLM timeouts (headlines + `[inferAnalyst]` logs already exist).
 - Update `docs/05-integracion-e2e.md` to reflect what is now automated vs manual.
 - Include a smoke-test plan (one ticker, invalid ticker, LLM timeout).
 ```

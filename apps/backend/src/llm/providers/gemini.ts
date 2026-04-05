@@ -38,7 +38,8 @@ export class GeminiClient {
           temperature: 0,
           topK: 1,
           topP: 1,
-          maxOutputTokens: 256,
+          // Analyst JSON + reasoning needs headroom; 256 truncates mid-fence and breaks JSON.parse.
+          maxOutputTokens: 1024,
         },
       }),
     });

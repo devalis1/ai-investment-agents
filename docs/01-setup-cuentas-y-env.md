@@ -16,22 +16,33 @@ Goal: make the project ready so the backend and frontend can communicate with ex
    - Create a bot with `@BotFather` and save `TELEGRAM_BOT_TOKEN`.
    - Get `TELEGRAM_CHAT_ID` via Bot API `getUpdates` (recommended) or `@userinfobot`.
 4. **LLM provider (cloud or local)**
-   - If cloud: create an API key (e.g. OpenAI/Gemini) and save `OPENAI_API_KEY` (or the equivalent variable).
-   - If local: install Ollama/LM Studio and define the local endpoint to use.
-5. Create a `.env.local` file (in the root or per backend/frontend) with:
+   - **Local (default):** Ollama or LM Studio — set `LLM_LOCAL_PROVIDER`, endpoints, and model names (see root `.env.example`).
+   - **Cloud fallback:** this repo’s backend uses **Google Gemini** when `ENABLE_CLOUD_FALLBACK=true` (e.g. GitHub Actions). Set `GEMINI_API_KEY` and optionally `GEMINI_MODEL`.
+5. Create a `.env.local` file at the **repo root** (backend loads it from there; frontend may use `apps/frontend/.env.local` for the same keys). Start from `.env.example`:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=your_url
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=your_sb_publishable_key
-# Optional alias for older snippets:
-# NEXT_PUBLIC_SUPABASE_ANON_KEY=your_sb_publishable_key
-OPENAI_API_KEY=your_openai_key
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_URL=your_url
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
+LLM_DEBUG=false
+LLM_LOCAL_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen3.5:latest
+
+ENABLE_CLOUD_FALLBACK=false
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-1.5-flash
+
+TICKERS=AAPL,MSFT,NVDA
+
 TELEGRAM_BOT_TOKEN=your_telegram_token
 TELEGRAM_CHAT_ID=your_chat_id
-LLM_DEBUG=false
 ```
+
+For **on-demand analyze** from the dashboard, set server-side `CYCLE_TRIGGER_URL` and `CYCLE_TRIGGER_SECRET` on the frontend host, and run the backend HTTP worker with the same secret (`docs/status/current.md`).
 
 ## Risks and mitigations
 

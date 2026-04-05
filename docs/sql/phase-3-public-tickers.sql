@@ -13,7 +13,7 @@
 --   - RLS allows anonymous SELECT (dashboard can read the list without auth).
 --   - Writes go through the Supabase service role (backend GitHub Action / local CLI);
 --     anon/authenticated roles have no INSERT/UPDATE/DELETE policies yet.
---   - Managing rows via SQL editor or Table Editor is expected until AED-14 (UI CRUD).
+--   - Dashboard can mutate rows via Next.js `/api/tickers` + TICKERS_ADMIN_SECRET (see docs/status/current.md).
 
 create table if not exists public.tickers (
   ticker text primary key,

@@ -24,7 +24,8 @@ function buildAnalystPrompt(inputs: AnalystInputs): string {
     "- If rsi < 30: recommendation MUST be \"Buy\"",
     "- If 30 <= rsi <= 70: recommendation MUST be \"Hold\"",
     "- If rsi > 70: recommendation MUST be \"Sell\"",
-    "This policy is deterministic and overrides any other considerations. Headlines may be used only to add context in reasoning, but MUST NOT change the recommendation away from the RSI policy.",
+    "This policy is deterministic and overrides any other considerations.",
+    "When headline lines are provided, use them only to enrich `reasoning` (themes, not long quotes). They MUST NOT change `recommendation` away from the RSI policy. If headlines are N/A or empty, reason from price and RSI alone.",
     "",
     "Inputs:",
     `ticker: ${inputs.ticker}`,
@@ -39,9 +40,9 @@ function tryValidate(outputText: string): AnalystResponse | null {
   try {
     const trimmed = outputText.trim();
 
-    // Some models wrap the JSON in ```json ... ```
+    // Some models wrap the JSON in ```json ... ``` (closing fence may be missing if truncated).
     const fencedMatch = trimmed.match(/```json\s*([\s\S]*?)\s*```/i);
-    const maybeJson = fencedMatch?.[1] ?? trimmed;
+    const maybeJson = fencedMatch?.[1] ?? trimmed.replace(/^```(?:json)?\s*/i, "");
 
     // If the model returned extra text, trim to the first "{" and the last "}".
     const firstBrace = maybeJson.indexOf("{");
@@ -133,7 +134,19 @@ export async function inferAnalyst(
   inputs: AnalystInputs,
   opts?: { signal?: AbortSignal }
 ): Promise<AnalystResponse> {
+  const inferStarted = performance.now();
   const prompt = buildAnalystPrompt(inputs);
+
+  const logInferComplete = (providerId: string, schemaRepairAttempts: number): void => {
+    // eslint-disable-next-line no-console
+    console.log("[inferAnalyst]", {
+      ticker: inputs.ticker,
+      headlineCount: inputs.headlines.length,
+      providerId,
+      latencyMs: Math.round(performance.now() - inferStarted),
+      schemaRepairAttempts,
+    });
+  };
 
   // 1) Local first (Ollama / LM Studio)
   try {
@@ -149,7 +162,10 @@ export async function inferAnalyst(
       const raw1 = await localClient.chatCompletionJson(messages, { signal: opts?.signal });
       debugLog(`lmstudio raw1 (${inputs.ticker})`, raw1);
       const validated1 = tryValidate(raw1);
-      if (validated1) return validated1;
+      if (validated1) {
+        logInferComplete("lmstudio", 0);
+        return validated1;
+      }
 
       const repairMessages = [
         { role: "system", content: "Respond with ONLY valid JSON." },
@@ -163,6 +179,7 @@ export async function inferAnalyst(
           `Local model returned invalid JSON. Sample: ${JSON.stringify(raw2.slice(0, 200))}`
         );
       }
+      logInferComplete("lmstudio", 1);
       return validated2;
     }
 
@@ -176,7 +193,10 @@ export async function inferAnalyst(
     );
     debugLog(`ollama raw1 (${inputs.ticker})`, raw1);
     const validated1 = tryValidate(raw1);
-    if (validated1) return validated1;
+    if (validated1) {
+      logInferComplete("ollama", 0);
+      return validated1;
+    }
 
     const raw2 = await localClient.chat(
       [
@@ -192,18 +212,25 @@ export async function inferAnalyst(
         `Local model returned invalid JSON. Sample: ${JSON.stringify(raw2.slice(0, 200))}`
       );
     }
+    logInferComplete("ollama", 1);
     return validated2;
   } catch (err) {
     // Fall through to optional cloud fallback
     // (keep error non-sensitive; do not include prompts/keys)
+    const localHint =
+      err instanceof Error ? err.message : String(err);
     if (env.ENABLE_CLOUD_FALLBACK === "true") {
       // eslint-disable-next-line no-console
       console.warn("Local inference failed; falling back to cloud model.", {
         ticker: inputs.ticker,
-        provider: "gemini",
+        localProvider: getLlmLocalProvider(),
+        localError: localHint,
+        cloudProvider: "gemini",
         model: env.GEMINI_MODEL,
       });
-      return await inferGemini(prompt, { signal: opts?.signal });
+      const cloud = await inferGemini(prompt, { signal: opts?.signal });
+      logInferComplete(`gemini:${env.GEMINI_MODEL}`, 0);
+      return cloud;
     }
 
     throw new Error(

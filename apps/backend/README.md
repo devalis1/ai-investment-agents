@@ -6,6 +6,7 @@ This module will host:
 
 - Supabase schema (tables, RLS policies, triggers if needed)
 - Serverless functions (e.g. daily `fetcher` for Yahoo Finance)
+- **Fetcher headlines:** `runFetcher` adds **3–5** Yahoo `search` news lines per ticker (`src/fetcher/headlines.ts`); failures degrade to `headlines: []` with `[headlines]` logs (latency, attempts, provider id).
 - AI agent orchestration (model calls with *structured output*)
 - Telegram notifications
 

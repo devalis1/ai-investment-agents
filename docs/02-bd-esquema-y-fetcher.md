@@ -17,7 +17,7 @@ Run scripts in this order in the Supabase SQL Editor (or your migration runner):
 1. `docs/sql/phase-2-assets-ai-insights.sql` — creates `assets`, `ai_insights`, and baseline RLS (public `SELECT` for the prototype).
 2. `docs/sql/phase-3-public-tickers.sql` — creates `tickers`, enables RLS, and adds the same style of public read policy.
 
-**Single-user prototype:** anon users may read these tables so the dashboard works without auth. Writes are intended for the **service role** (backend job, SQL editor, Table Editor). There are no anon `INSERT`/`UPDATE` policies on `tickers` yet; editing rows in Supabase UI or SQL is the supported path until frontend CRUD (AED-14).
+**Single-user prototype:** anon users may read these tables so the dashboard works without auth. Writes to `tickers` use the **service role** on the Next.js server (`/api/tickers` + `TICKERS_ADMIN_SECRET`) or the backend job / SQL editor / Table Editor. There are no anon `INSERT`/`UPDATE` policies on `tickers`.
 
 ### Which tickers does the cycle use?
 

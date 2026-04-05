@@ -14,4 +14,13 @@ export function normalizeTickerList(input: string[]): string[] {
   return out;
 }
 
+/** First valid normalized symbol, or null. */
+export function normalizeTickerSymbol(raw: string): string | null {
+  const list = normalizeTickerList([raw]);
+  return list[0] ?? null;
+}
+
 export const MAX_TRIGGER_TICKERS = 24;
+
+/** Cap rows in `public.tickers` (scheduled / CLI cycle list). */
+export const MAX_DB_CYCLE_TICKERS = 48;

@@ -1,0 +1,18 @@
+{
+  "AAPL": {
+    "market": "US",
+    "price_current": 190.5,
+    "rsi": 48.2,
+    "headlines": [
+      "Example headline for offline runs — Stub"
+    ]
+  },
+  "MELI": {
+    "market": "US",
+    "price_current": 1700,
+    "rsi": 50,
+    "headlines": [
+      "MercadoLibre stub headline — Dev"
+    ]
+  }
+}

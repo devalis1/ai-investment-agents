@@ -24,3 +24,8 @@ coverage
 
 *.log
 
+# Local market-data stub (copy dev-market-stub.example.json)
+apps/backend/data/dev-market-stub.json
+
+**/*.tsbuildinfo
+
