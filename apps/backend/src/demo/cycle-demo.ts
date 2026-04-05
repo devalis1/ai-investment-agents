@@ -1,11 +1,15 @@
 import { analyzeCycle } from "../jobs/cycle";
+import { createServiceClient } from "../supabase/serviceClient";
+import { resolveCycleTickers } from "../tickers/resolveCycleTickers";
 
 async function main(): Promise<void> {
-  const rawTickers = process.env.TICKERS ?? "AAPL";
-  const tickers = rawTickers
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const supabase = createServiceClient();
+  const { tickers, source } = await resolveCycleTickers(
+    supabase,
+    process.env.TICKERS ?? "AAPL"
+  );
+  // eslint-disable-next-line no-console
+  console.log("dev:cycle tickers:", { source, tickers });
 
   await analyzeCycle({ tickers });
 }

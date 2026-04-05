@@ -31,12 +31,15 @@ These are used only for `select` on `assets` and `ai_insights` (anon / publishab
 
 ### Server-only (never prefix with `NEXT_PUBLIC_`)
 
-Optional — remote analysis trigger from the Next.js Route Handler:
+Optional — remote analysis trigger from the Next.js Route Handler (proxies to the backend worker in `apps/backend`, `npm run cycle:trigger-server`):
 
-- `CYCLE_TRIGGER_URL` — URL of a **future** HTTP worker that runs the backend cycle with service credentials (not included in this repo today).
-- `CYCLE_TRIGGER_SECRET` — shared secret; the frontend server sends `Authorization: Bearer <secret>` when POSTing `{ "tickers": ["AAPL"] }`.
+- `CYCLE_TRIGGER_URL` — full URL the server should POST to (e.g. `https://your-worker.example.com/` or `…/trigger`).
+- `CYCLE_TRIGGER_SECRET` — shared secret; must match the worker’s `CYCLE_TRIGGER_SECRET`. Sent as `Authorization: Bearer <secret>` with body `{ "tickers": ["AAPL"] }`.
+- `CYCLE_TRIGGER_PROXY_TIMEOUT_MS` — optional; abort waiting for the worker after this many ms (default **240000**). Align with Vercel `maxDuration` on this route (240s) and your plan limits.
 
-If these are unset, **Analyze** actions return HTTP `501` with a clear JSON message; the UI explains that local/GitHub/backend HTTP integration is required.
+**Vercel:** Project → Settings → Environment Variables → add the three keys above for **Production** (and Preview if needed). Use the **server** / non-public scope only—never `NEXT_PUBLIC_*` for these.
+
+If `CYCLE_TRIGGER_URL` / `CYCLE_TRIGGER_SECRET` are unset, **Analyze** actions return HTTP `501` with a clear JSON message; the UI explains that local/GitHub/backend HTTP integration is required.
 
 Ticker search uses Yahoo Finance’s public search JSON endpoint from `GET /api/ticker-search` (no API key). Treat it as **best-effort**: no SLA, unofficial surface, and your deployment IP may be throttled if traffic is high. Keeping search on the server avoids **CORS** blocks and keeps any future paid provider keys off the client.
 

@@ -33,7 +33,7 @@ From `apps/backend/`:
 npm run cycle:daily
 ```
 
-This reads `TICKERS` from environment and defaults to `AAPL,MSFT,NVDA` if missing.
+This resolves symbols from `public.tickers` when at least one enabled row exists (see `docs/sql/phase-3-public-tickers.sql`). Otherwise it reads `TICKERS` from the environment and defaults to `AAPL,MSFT,NVDA` if unset.
 
 ### Cron (daily)
 
@@ -75,6 +75,10 @@ Important:
 Verify:
 
 - Go to **Actions → Daily analyze cycle → Run workflow** (manual) and confirm logs show inserts into `assets` and `ai_insights`.
+
+## On-demand cycle (browser → Next.js → HTTP worker)
+
+**Decision (AED-20):** use a **separate Node HTTP worker** that runs `analyzeCycle` from `apps/backend`, not an in-process Next.js import or a spawned subprocess. Rationale: the cycle can run many minutes (per-ticker LLM timeouts are up to 240s in `cycle.ts`; multiple tickers stack), Vercel route handlers have finite `maxDuration`, and keeping Supabase service role + LLM + Telegram secrets on a long-lived VM / container is simpler than stretching a serverless monolith. The Next.js app exposes only `POST /api/trigger-cycle`, which validates tickers and forwards `{ tickers }` with `Authorization: Bearer <CYCLE_TRIGGER_SECRET>` to `CYCLE_TRIGGER_URL`. Deploy the worker with the same backend `.env.local` variables as CLI (`SUPABASE_*`, LLM, optional Telegram) plus `CYCLE_TRIGGER_SECRET` and optionally `CYCLE_TRIGGER_SERVER_PORT`. See `docs/status/current.md` for timeouts and Vercel env wiring.
 
 ## Tests
 

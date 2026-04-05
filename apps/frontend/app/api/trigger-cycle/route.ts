@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { MAX_TRIGGER_TICKERS, normalizeTickerList } from '@/lib/ticker-symbols';
 
+/** Align with `CYCLE_TRIGGER_PROXY_TIMEOUT_MS` default so Pro-tier Fluid workers can finish before the proxy aborts. */
+export const maxDuration = 240;
+
 type TriggerBody = {
   tickers?: unknown;
 };
@@ -10,8 +13,9 @@ type TriggerBody = {
  * Never expose Supabase service role keys to the browser — the worker must hold them.
  *
  * Env (server-only):
- * - CYCLE_TRIGGER_URL — POST target (e.g. future Cloud Run / internal worker).
+ * - CYCLE_TRIGGER_URL — POST target (the backend HTTP worker; see apps/backend `cycle:trigger-server`).
  * - CYCLE_TRIGGER_SECRET — shared secret; sent as Authorization: Bearer <secret>.
+ * - CYCLE_TRIGGER_PROXY_TIMEOUT_MS — optional; max wait for the upstream worker (default 240000). Match to your Vercel plan / worker hosting limits.
  */
 export async function POST(req: Request): Promise<Response> {
   let body: TriggerBody;
@@ -65,8 +69,16 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
+  const proxyTimeoutMs = Number(
+    process.env.CYCLE_TRIGGER_PROXY_TIMEOUT_MS ?? 240_000,
+  );
+  const safeProxyMs =
+    Number.isFinite(proxyTimeoutMs) && proxyTimeoutMs > 0
+      ? proxyTimeoutMs
+      : 240_000;
+
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), 120_000);
+  const timer = setTimeout(() => ac.abort(), safeProxyMs);
 
   try {
     const upstream = await fetch(url, {
